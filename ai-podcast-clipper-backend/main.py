@@ -6,20 +6,18 @@ import shutil
 import subprocess
 import time
 import uuid
-import boto3
-import cv2
+import os
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-import ffmpegcv
 import modal
-import numpy as np
 from pydantic import BaseModel
-import os
-from google import genai
 
-import pysubs2
-from tqdm import tqdm
-import whisperx
+# NOTE: Heavy ML/native libs (boto3, cv2, ffmpegcv, numpy, google-genai,
+# pysubs2, tqdm, whisperx) are imported lazily inside the functions that use
+# them. `modal deploy` imports this module on the local machine to discover the
+# app, and those packages are only installed inside the Modal container image
+# (see `image` below), not locally — importing them at module scope breaks the
+# deploy on machines without the full GPU stack.
 
 
 class ProcessVideoRequest(BaseModel):
@@ -28,7 +26,20 @@ class ProcessVideoRequest(BaseModel):
 
 image = (modal.Image.from_registry(
     "nvidia/cuda:12.4.0-devel-ubuntu22.04", add_python="3.11")
-    .apt_install(["ffmpeg", "libgl1-mesa-glx", "wget", "libcudnn8", "libcudnn8-dev", "pkg-config", "libavformat-dev", "libavcodec-dev", "libavdevice-dev", "libavutil-dev", "libswscale-dev", "libswresample-dev", "libavfilter-dev", "clang", "build-essential", "gcc", "git"])
+    # NOTE: libcudnn8/libcudnn8-dev were removed — NVIDIA dropped those package
+    # names from the cuda:12.4.0 apt repos (cuDNN 9 uses different names), which
+    # broke `apt-get install`. They aren't needed: torch==2.0.1 ships its own
+    # bundled cuDNN, which is what WhisperX/torch use at runtime on the GPU.
+    .apt_install(["ffmpeg", "libgl1-mesa-glx", "wget", "pkg-config", "libavformat-dev", "libavcodec-dev", "libavdevice-dev", "libavutil-dev", "libswscale-dev", "libswresample-dev", "libavfilter-dev", "clang", "build-essential", "gcc", "git"])
+    # whisperx@v3.2.0 (and transitive deps) fail to build against setuptools>=81,
+    # which removed pkg_resources. pip builds wheels in ISOLATED envs, so a plain
+    # `pip install setuptools<81` in the base image never reaches them. Writing a
+    # constraints file and exposing it via PIP_CONSTRAINT applies the pin INSIDE
+    # each isolated build env while leaving build isolation intact (so torch /
+    # numpy / setuptools are still auto-provisioned for the build).
+    # See m-bain/whisperX#1210.
+    .run_commands(["echo 'setuptools<81' > /tmp/pip-constraints.txt"])
+    .env({"PIP_CONSTRAINT": "/tmp/pip-constraints.txt"})
     .pip_install_from_requirements("requirements.txt")
     .run_commands([
         "mkdir -p /usr/share/fonts/truetype/custom",
@@ -49,6 +60,11 @@ auth_scheme = HTTPBearer()
 
 
 def create_vertical_video(tracks, scores, pyframes_path, pyavi_path, audio_path, output_path, framerate=25):
+    import cv2
+    import ffmpegcv
+    import numpy as np
+    from tqdm import tqdm
+
     target_width = 1080
     target_height = 1920
 
@@ -150,6 +166,8 @@ def create_vertical_video(tracks, scores, pyframes_path, pyavi_path, audio_path,
 
 
 def create_subtitles_with_ffmpeg(transcript_segments: list, clip_start: float, clip_end: float, clip_video_path: str, output_path: str, max_words: int = 5):
+    import pysubs2
+
     temp_dir = os.path.dirname(output_path)
     subtitle_path = os.path.join(temp_dir, "temp_subtitles.ass")
 
@@ -301,6 +319,7 @@ def process_clip(base_dir: str, original_video_path: str, s3_key: str, start_tim
     create_subtitles_with_ffmpeg(transcript_segments, start_time,
                                  end_time, vertical_mp4_path, subtitle_output_path, max_words=5)
 
+    import boto3
     s3_client = boto3.client("s3")
     s3_client.upload_file(
         subtitle_output_path, os.environ["S3_BUCKET_NAME"], output_s3_key)
@@ -310,6 +329,9 @@ def process_clip(base_dir: str, original_video_path: str, s3_key: str, start_tim
 class AiPodcastClipper:
     @modal.enter()
     def load_model(self):
+        import whisperx
+        from google import genai
+
         print("Loading models")
 
         self.whisperx_model = whisperx.load_model(
@@ -327,6 +349,8 @@ class AiPodcastClipper:
         print("Created gemini client...")
 
     def transcribe_video(self, base_dir: str, video_path: str) -> str:
+        import whisperx
+
         audio_path = base_dir / "audio.wav"
         extract_cmd = f"ffmpeg -i {video_path} -vn -acodec pcm_s16le -ar 16000 -ac 1 {audio_path}"
         subprocess.run(extract_cmd, shell=True,
@@ -404,6 +428,7 @@ class AiPodcastClipper:
 
         # Download video file
         video_path = base_dir / "input.mp4"
+        import boto3
         s3_client = boto3.client("s3")
         s3_client.download_file(os.environ["S3_BUCKET_NAME"], s3_key, str(video_path))
 

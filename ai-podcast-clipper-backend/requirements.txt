@@ -1,3 +1,10 @@
+# setuptools<81 / wheel are pinned here so they're present in the runtime env.
+# The same pin is ALSO enforced at wheel-BUILD time via PIP_CONSTRAINT in
+# main.py, because pip builds in isolated envs that a plain requirement line
+# can't reach. setuptools>=81 removed pkg_resources, which whisperx@v3.2.0 and
+# transitive deps need. See m-bain/whisperX#1210.
+setuptools<81
+wheel
 tqdm
 torch==2.0.1
 torchaudio==2.0.2
