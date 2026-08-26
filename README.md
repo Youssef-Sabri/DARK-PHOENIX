@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>AI-powered podcast video clipper</strong><br>
-  A <a href="https://www.linkedin.com/company/lunartechai/">LUNARTECH</a> Labs project<br>
+  A <a href="https://lunartech.ai/">LUNARTECH</a> Labs project<br>
   Created by <a href="https://www.linkedin.com/in/vahe-aslanyan/">Vahe Aslanyan</a>
 </p>
 
