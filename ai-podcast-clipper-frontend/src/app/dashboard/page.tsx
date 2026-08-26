@@ -19,6 +19,9 @@ export default async function DashboardPage() {
         where: {
           uploaded: true,
         },
+        orderBy: {
+          createdAt: "desc",
+        },
         select: {
           id: true,
           s3Key: true,
@@ -43,7 +46,7 @@ export default async function DashboardPage() {
   const formattedFiles = userData.uploadedFiles.map((file) => ({
     id: file.id,
     s3Key: file.s3Key,
-    filename: file.displayName ?? "Unkown filename",
+    filename: file.displayName ?? "Unknown filename",
     status: file.status,
     clipsCount: file._count.clips,
     createdAt: file.createdAt,

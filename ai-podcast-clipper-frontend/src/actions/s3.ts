@@ -17,7 +17,14 @@ export async function generateUploadUrl(fileInfo: {
   uploadedFileId: string;
 }> {
   const session = await auth();
-  if (!session) throw new Error("Unauthorized");
+  if (!session?.user?.id) throw new Error("Unauthorized");
+
+  const fileExtension = fileInfo.filename.split(".").pop()?.toLowerCase();
+  const contentType = fileInfo.contentType || "video/mp4";
+
+  if (fileExtension !== "mp4" || contentType !== "video/mp4") {
+    throw new Error("Only MP4 video uploads are supported");
+  }
 
   const s3Client = new S3Client({
     region: env.AWS_REGION,
@@ -27,15 +34,13 @@ export async function generateUploadUrl(fileInfo: {
     },
   });
 
-  const fileExtension = fileInfo.filename.split(".").pop() ?? "";
-
   const uniqueId = uuidv4();
-  const key = `${uniqueId}/original.${fileExtension}`;
+  const key = `${uniqueId}/original.mp4`;
 
   const command = new PutObjectCommand({
     Bucket: env.S3_BUCKET_NAME,
     Key: key,
-    ContentType: fileInfo.contentType,
+    ContentType: contentType,
   });
 
   const signedUrl = await getSignedUrl(s3Client, command, { expiresIn: 600 });

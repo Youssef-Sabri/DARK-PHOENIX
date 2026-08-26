@@ -14,7 +14,14 @@ ffmpegcv
 numpy<2.0
 python_speech_features
 scipy
-scenedetect
+# Pin to the last 0.5.x release: PySceneDetect >=0.6 removed the
+# `scenedetect.video_manager` module / `VideoManager` class, but the vendored
+# asd/demoTalkNet.py imports `from scenedetect.video_manager import VideoManager`
+# (the 0.5.x API). Without this pin demoTalkNet.py dies on import with
+# `ModuleNotFoundError: No module named 'scenedetect.video_manager'`, so no
+# tracks/scores are produced and process_clip raises FileNotFoundError -> the
+# backend 500s and 0 clips are created.
+scenedetect==0.5.6.1
 scikit-learn
 gdown
 pandas

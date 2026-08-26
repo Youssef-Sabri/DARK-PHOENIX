@@ -14,12 +14,13 @@ function ClipCard({ clip }: { clip: Clip }) {
     async function fetchPlayUrl() {
       try {
         const result = await getClipPlayUrl(clip.id);
-        if (result.succes && result.url) {
+        if (result.success && result.url) {
           setPlayUrl(result.url);
         } else if (result.error) {
           console.error("Failed to get play url: " + result.error);
         }
       } catch (error) {
+        console.error("Failed to load clip playback URL", error);
       } finally {
         setIsLoadingUrl(false);
       }
@@ -32,6 +33,7 @@ function ClipCard({ clip }: { clip: Clip }) {
     if (playUrl) {
       const link = document.createElement("a");
       link.href = playUrl;
+      link.download = `dark-phoenix-${clip.id}.mp4`;
       link.style.display = "none";
       document.body.appendChild(link);
       link.click();

@@ -4,9 +4,15 @@ import { type Metadata } from "next";
 import { Geist } from "next/font/google";
 
 export const metadata: Metadata = {
-  title: "Podcast Clipper",
-  description: "Podcast Clipper",
-  icons: [{ rel: "icon", url: "/favicon.ico" }],
+  title: "LUNARTECH Clipper",
+  description: "Turn long-form podcasts into branded, shareable clips.",
+  icons: [
+    {
+      rel: "icon",
+      url: "/branding/lunartech-logo.png",
+      type: "image/png",
+    },
+  ],
 };
 
 const geist = Geist({

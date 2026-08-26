@@ -1,6 +1,10 @@
 "use server";
 
-import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+  GetObjectCommand,
+  HeadObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { revalidatePath } from "next/cache";
 import { env } from "~/env";
@@ -9,42 +13,87 @@ import { auth } from "~/server/auth";
 import { db } from "~/server/db";
 
 export async function processVideo(uploadedFileId: string) {
-  const uploadedVideo = await db.uploadedFile.findUniqueOrThrow({
+  const session = await auth();
+  if (!session?.user?.id) throw new Error("Unauthorized");
+
+  const uploadedVideo = await db.uploadedFile.findFirstOrThrow({
     where: {
       id: uploadedFileId,
+      userId: session.user.id,
     },
     select: {
       uploaded: true,
+      status: true,
       id: true,
       userId: true,
+      s3Key: true,
     },
   });
 
-  if (uploadedVideo.uploaded) return;
+  const retryableStatuses = ["failed", "no credits"];
+  if (
+    uploadedVideo.uploaded &&
+    !retryableStatuses.includes(uploadedVideo.status)
+  ) {
+    return;
+  }
 
-  await inngest.send({
-    name: "process-video-events",
-    data: { uploadedFileId: uploadedVideo.id, userId: uploadedVideo.userId },
-  });
+  const s3Client = createS3Client();
+  const uploadedObject = await s3Client.send(
+    new HeadObjectCommand({
+      Bucket: env.S3_BUCKET_NAME,
+      Key: uploadedVideo.s3Key,
+    }),
+  );
 
-  await db.uploadedFile.update({
-    where: {
-      id: uploadedFileId,
-    },
-    data: {
-      uploaded: true,
-    },
-  });
+  if (!uploadedObject.ContentLength) {
+    throw new Error("Uploaded video is empty or missing");
+  }
+
+  const claimedUpload = uploadedVideo.uploaded
+    ? await db.uploadedFile.updateMany({
+        where: {
+          id: uploadedVideo.id,
+          userId: session.user.id,
+          status: { in: retryableStatuses },
+        },
+        data: { status: "queued" },
+      })
+    : await db.uploadedFile.updateMany({
+        where: {
+          id: uploadedVideo.id,
+          userId: session.user.id,
+          uploaded: false,
+        },
+        data: { uploaded: true },
+      });
+
+  if (claimedUpload.count === 0) return;
+
+  try {
+    await inngest.send({
+      name: "process-video-events",
+      data: { uploadedFileId: uploadedVideo.id, userId: uploadedVideo.userId },
+    });
+  } catch (error) {
+    await db.uploadedFile.update({
+      where: { id: uploadedVideo.id },
+      data: uploadedVideo.uploaded
+        ? { status: uploadedVideo.status }
+        : { uploaded: false },
+    });
+    throw error;
+  }
 
   revalidatePath("/dashboard");
 }
 
 export async function getClipPlayUrl(
   clipId: string,
-): Promise<{ succes: boolean; url?: string; error?: string }> {
+): Promise<{ success: boolean; url?: string; error?: string }> {
   const session = await auth();
   if (!session?.user?.id) {
-    return { succes: false, error: "Unauthorized" };
+    return { success: false, error: "Unauthorized" };
   }
 
   try {
@@ -55,13 +104,7 @@ export async function getClipPlayUrl(
       },
     });
 
-    const s3Client = new S3Client({
-      region: env.AWS_REGION,
-      credentials: {
-        accessKeyId: env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
-      },
-    });
+    const s3Client = createS3Client();
 
     const command = new GetObjectCommand({
       Bucket: env.S3_BUCKET_NAME,
@@ -72,8 +115,18 @@ export async function getClipPlayUrl(
       expiresIn: 3600,
     });
 
-    return { succes: true, url: signedUrl };
-  } catch (error) {
-    return { succes: false, error: "Failed to generate play URL." };
+    return { success: true, url: signedUrl };
+  } catch {
+    return { success: false, error: "Failed to generate play URL." };
   }
+}
+
+function createS3Client() {
+  return new S3Client({
+    region: env.AWS_REGION,
+    credentials: {
+      accessKeyId: env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+    },
+  });
 }

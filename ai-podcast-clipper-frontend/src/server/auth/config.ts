@@ -44,7 +44,7 @@ export const authConfig = {
           return null;
         }
 
-        const email = credentials.email as string;
+        const email = (credentials.email as string).trim().toLowerCase();
         const password = credentials.password as string;
 
         const user = await db.user.findUnique({

@@ -11,7 +11,6 @@ import {
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Button } from "./ui/button";
-import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
@@ -20,6 +19,7 @@ import { signupSchema, type SignupFormValues } from "~/schemas/auth";
 import { signUp } from "~/actions/auth";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { BrandLogo } from "./brand-logo";
 
 export function SignupForm({
   className,
@@ -42,7 +42,7 @@ export function SignupForm({
 
       const result = await signUp(data);
       if (!result.success) {
-        setError(result.error ?? "An error occured during signup");
+        setError(result.error ?? "An error occurred during signup");
         return;
       }
 
@@ -59,8 +59,8 @@ export function SignupForm({
       } else {
         router.push("/dashboard");
       }
-    } catch (error) {
-      setError("An unexpected error occured");
+    } catch {
+      setError("An unexpected error occurred");
     } finally {
       setIsSubmitting(false);
     }
@@ -68,6 +68,9 @@ export function SignupForm({
 
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
+      <Link href="/" className="mx-auto" aria-label="LUNARTECH home">
+        <BrandLogo className="w-56" priority />
+      </Link>
       <Card>
         <CardHeader>
           <CardTitle className="text-2xl">Sign up</CardTitle>

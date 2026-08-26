@@ -121,10 +121,10 @@ def bb_intersection_over_union(boxA, boxB, evalCol = False):
 	boxAArea = (boxA[2] - boxA[0]) * (boxA[3] - boxA[1])
 	boxBArea = (boxB[2] - boxB[0]) * (boxB[3] - boxB[1])
 	if evalCol == True:
-		iou = interArea / float(boxAArea)
+		denominator = float(boxAArea)
 	else:
-		iou = interArea / float(boxAArea + boxBArea - interArea)
-	return iou
+		denominator = float(boxAArea + boxBArea - interArea)
+	return interArea / denominator if denominator > 0 else 0.0
 
 def track_shot(args, sceneFaces):
 	# CPU: Face tracking
@@ -133,7 +133,7 @@ def track_shot(args, sceneFaces):
 	while True:
 		track     = []
 		for frameFaces in sceneFaces:
-			for face in frameFaces:
+			for face in list(frameFaces):
 				if track == []:
 					track.append(face)
 					frameFaces.remove(face)
@@ -212,7 +212,7 @@ def evaluate_network(files, args):
 	s.eval()
 	allScores = []
 	# durationSet = {1,2,4,6} # To make the result more reliable
-	durationSet = {1,1,1,2,2,2,3,3,4,5,6} # Use this line can get more reliable result
+	durationSet = [1,1,1,2,2,2,3,3,4,5,6] # Preserve repeated durations for weighting
 	for file in tqdm.tqdm(files, total = len(files)):
 		fileName = os.path.splitext(file.split('/')[-1])[0] # Load audio and video
 		_, audio = wavfile.read(os.path.join(args.pycropPath, fileName + '.wav'))
@@ -260,7 +260,7 @@ def visualization(tracks, scores, args):
 	for tidx, track in enumerate(tracks):
 		score = scores[tidx]
 		for fidx, frame in enumerate(track['track']['frame'].tolist()):
-			s = score[max(fidx - 2, 0): min(fidx + 3, len(score) - 1)] # average smoothing
+			s = score[max(fidx - 2, 0): min(fidx + 3, len(score))] # average smoothing
 			s = numpy.mean(s)
 			faces[frame].append({'track':tidx, 'score':float(s),'s':track['proc_track']['s'][fidx], 'x':track['proc_track']['x'][fidx], 'y':track['proc_track']['y'][fidx]})
 	firstImage = cv2.imread(flist[0])
@@ -310,7 +310,7 @@ def evaluate_col_ASD(tracks, scores, args):
 	for tidx, track in enumerate(tracks):
 		score = scores[tidx]				
 		for fidx, frame in enumerate(track['track']['frame'].tolist()):
-			s = numpy.mean(score[max(fidx - 2, 0): min(fidx + 3, len(score) - 1)]) # average smoothing
+			s = numpy.mean(score[max(fidx - 2, 0): min(fidx + 3, len(score))]) # average smoothing
 			faces[frame].append({'track':tidx, 'score':float(s),'s':track['proc_track']['s'][fidx], 'x':track['proc_track']['x'][fidx], 'y':track['proc_track']['y'][fidx]})
 	for fidx, fname in tqdm.tqdm(enumerate(flist), total = len(flist)):
 		if fidx in dictGT: # This frame has label

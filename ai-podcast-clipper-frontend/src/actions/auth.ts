@@ -20,7 +20,8 @@ export async function signUp(data: SignupFormValues): Promise<SignupResult> {
     };
   }
 
-  const { email, password } = validationResult.data;
+  const email = validationResult.data.email.trim().toLowerCase();
+  const { password } = validationResult.data;
 
   try {
     const existingUser = await db.user.findUnique({ where: { email } });
@@ -37,15 +38,21 @@ export async function signUp(data: SignupFormValues): Promise<SignupResult> {
     // Try to create Stripe customer, but don't fail signup if Stripe isn't configured
     let stripeCustomerId: string | null = null;
     try {
-      if (env.STRIPE_SECRET_KEY && !env.STRIPE_SECRET_KEY.includes('placeholder')) {
+      if (
+        env.STRIPE_SECRET_KEY &&
+        !env.STRIPE_SECRET_KEY.includes("placeholder")
+      ) {
         const stripe = new Stripe(env.STRIPE_SECRET_KEY);
         const stripeCustomer = await stripe.customers.create({
-          email: email.toLowerCase(),
+          email,
         });
         stripeCustomerId = stripeCustomer.id;
       }
     } catch (stripeError) {
-      console.warn('Stripe customer creation failed, continuing without:', stripeError);
+      console.warn(
+        "Stripe customer creation failed, continuing without:",
+        stripeError,
+      );
     }
 
     await db.user.create({
@@ -57,7 +64,7 @@ export async function signUp(data: SignupFormValues): Promise<SignupResult> {
     });
 
     return { success: true };
-  } catch (error) {
-    return { success: false, error: "An error occured during signup" };
+  } catch {
+    return { success: false, error: "An error occurred during signup" };
   }
 }

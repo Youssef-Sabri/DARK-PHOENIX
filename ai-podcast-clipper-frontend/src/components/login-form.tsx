@@ -11,20 +11,14 @@ import {
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Button } from "./ui/button";
-import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
 import Link from "next/link";
-import {
-  loginSchema,
-  signupSchema,
-  type LoginFormValues,
-  type SignupFormValues,
-} from "~/schemas/auth";
-import { signUp } from "~/actions/auth";
+import { loginSchema, type LoginFormValues } from "~/schemas/auth";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { BrandLogo } from "./brand-logo";
 
 export function LoginForm({
   className,
@@ -56,8 +50,8 @@ export function LoginForm({
       } else {
         router.push("/dashboard");
       }
-    } catch (error) {
-      setError("An unexpected error occured");
+    } catch {
+      setError("An unexpected error occurred");
     } finally {
       setIsSubmitting(false);
     }
@@ -65,6 +59,9 @@ export function LoginForm({
 
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
+      <Link href="/" className="mx-auto" aria-label="LUNARTECH home">
+        <BrandLogo className="w-56" priority />
+      </Link>
       <Card>
         <CardHeader>
           <CardTitle className="text-2xl">Login</CardTitle>

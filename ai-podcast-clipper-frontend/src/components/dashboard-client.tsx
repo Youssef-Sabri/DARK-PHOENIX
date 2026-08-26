@@ -1,6 +1,6 @@
 "use client";
 
-import Dropzone, { type DropzoneState } from "shadcn-dropzone";
+import { useDropzone } from "react-dropzone";
 import type { Clip } from "@prisma/client";
 import Link from "next/link";
 import { Button } from "./ui/button";
@@ -46,6 +46,7 @@ export function DashboardClient({
   const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
   const router = useRouter();
 
   const handleRefresh = async () => {
@@ -58,16 +59,40 @@ export function DashboardClient({
     setFiles(acceptedFiles);
   };
 
+  const handleRetry = async (uploadedFileId: string) => {
+    setRetryingId(uploadedFileId);
+    try {
+      await processVideo(uploadedFileId);
+      toast.success("Video queued again");
+      router.refresh();
+    } catch (error) {
+      console.error("Video retry failed", error);
+      toast.error("Could not retry video processing");
+    } finally {
+      setRetryingId(null);
+    }
+  };
+
+  const { getInputProps, getRootProps, isDragActive } = useDropzone({
+    onDrop: handleDrop,
+    accept: { "video/mp4": [".mp4"] },
+    maxSize: 500 * 1024 * 1024,
+    disabled: uploading,
+    maxFiles: 1,
+    multiple: false,
+  });
+
   const handleUpload = async () => {
     if (files.length === 0) return;
 
     const file = files[0]!;
+    const contentType = file.type || "video/mp4";
     setUploading(true);
 
     try {
       const { success, signedUrl, uploadedFileId } = await generateUploadUrl({
         filename: file.name,
-        contentType: file.type,
+        contentType,
       });
 
       if (!success) throw new Error("Failed to get upload URL");
@@ -76,12 +101,12 @@ export function DashboardClient({
         method: "PUT",
         body: file,
         headers: {
-          "Content-Type": file.type,
+          "Content-Type": contentType,
         },
       });
 
       if (!uploadResponse.ok)
-        throw new Error(`Upload filed with status: ${uploadResponse.status}`);
+        throw new Error(`Upload failed with status: ${uploadResponse.status}`);
 
       await processVideo(uploadedFileId);
 
@@ -93,6 +118,7 @@ export function DashboardClient({
         duration: 5000,
       });
     } catch (error) {
+      console.error("Video upload failed", error);
       toast.error("Upload failed", {
         description:
           "There was a problem uploading your video. Please try again.",
@@ -107,7 +133,7 @@ export function DashboardClient({
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
-            Podcast Clipper
+            LUNARTECH Clipper
           </h1>
           <p className="text-muted-foreground">
             Upload your podcast and get AI-generated clips instantly
@@ -133,33 +159,32 @@ export function DashboardClient({
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Dropzone
-                onDrop={handleDrop}
-                accept={{ "video/mp4": [".mp4"] }}
-                maxSize={500 * 1024 * 1024}
-                disabled={uploading}
-                maxFiles={1}
+              <div
+                {...getRootProps()}
+                className="hover:bg-muted/50 cursor-pointer rounded-lg border border-dashed transition-colors"
               >
-                {(dropzone: DropzoneState) => (
-                  <>
-                    <div className="flex flex-col items-center justify-center space-y-4 rounded-lg p-10 text-center">
-                      <UploadCloud className="text-muted-foreground h-12 w-12" />
-                      <p className="font-medium">Drag and drop your file</p>
-                      <p className="text-muted-foreground text-sm">
-                        or click to browse (MP4 up to 500MB)
-                      </p>
-                      <Button
-                        className="cursor-pointer"
-                        variant="default"
-                        size="sm"
-                        disabled={uploading}
-                      >
-                        Select File
-                      </Button>
-                    </div>
-                  </>
-                )}
-              </Dropzone>
+                <input {...getInputProps()} />
+                <div className="flex flex-col items-center justify-center space-y-4 rounded-lg p-10 text-center">
+                  <UploadCloud className="text-muted-foreground h-12 w-12" />
+                  <p className="font-medium">
+                    {isDragActive
+                      ? "Drop your video here"
+                      : "Drag and drop your file"}
+                  </p>
+                  <p className="text-muted-foreground text-sm">
+                    or click to browse (MP4 up to 500MB)
+                  </p>
+                  <Button
+                    type="button"
+                    className="pointer-events-none"
+                    variant="default"
+                    size="sm"
+                    disabled={uploading}
+                  >
+                    Select File
+                  </Button>
+                </div>
+              </div>
 
               <div className="mt-2 flex items-start justify-between">
                 <div>
@@ -213,6 +238,7 @@ export function DashboardClient({
                           <TableHead>Uploaded</TableHead>
                           <TableHead>Status</TableHead>
                           <TableHead>Clips created</TableHead>
+                          <TableHead>Action</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -253,6 +279,22 @@ export function DashboardClient({
                                 </span>
                               )}
                             </TableCell>
+                            <TableCell>
+                              {(item.status === "failed" ||
+                                item.status === "no credits") && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={retryingId === item.id}
+                                  onClick={() => handleRetry(item.id)}
+                                >
+                                  {retryingId === item.id && (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  )}
+                                  Retry
+                                </Button>
+                              )}
+                            </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -270,7 +312,7 @@ export function DashboardClient({
               <CardTitle>My Clips</CardTitle>
               <CardDescription>
                 View and manage your generated clips here. Processing may take a
-                few minuntes.
+                few minutes.
               </CardDescription>
             </CardHeader>
             <CardContent>

@@ -4,7 +4,7 @@ import type { VariantProps } from "class-variance-authority";
 import { ArrowLeftIcon, CheckIcon } from "lucide-react";
 import Link from "next/link";
 import { createCheckoutSession, type PriceId } from "~/actions/stripe";
-import { Button, buttonVariants } from "~/components/ui/button";
+import { Button, type buttonVariants } from "~/components/ui/button";
 import {
   Card,
   CardContent,
@@ -51,7 +51,7 @@ const plans: PricingPlan[] = [
   {
     title: "Large Pack",
     price: "$69.99",
-    description: "Ideal for podcast studioes and agencies",
+    description: "Ideal for podcast studios and agencies",
     features: ["500 credits", "No expiration", "Download all clips"],
     buttonText: "Buy 500 credits",
     buttonVariant: "outline",
@@ -127,7 +127,7 @@ export default function BillingPage() {
             Buy Credits
           </h1>
           <p className="text-muted-foreground">
-            Purchase credits to generate more podcast clips. The more credtis
+            Purchase credits to generate more podcast clips. The more credits
             you buy, the better the value.
           </p>
         </div>
@@ -142,12 +142,14 @@ export default function BillingPage() {
       <div className="bg-muted/50 rounded-lg p-6">
         <h3 className="mb-4 text-lg font-semibold">How credits work</h3>
         <ul className="text-muted-foreground list-disc space-y-2 pl-5 text-sm">
-          <li>1 credit = 1 minute of podcast processing</li>
+          <li>1 credit = 1 generated podcast clip</li>
           <li>
             The program will create around 1 clip per 5 minutes of podcast
           </li>
           <li>Credits never expire and can be used anytime</li>
-          <li>Longer podcasts require more credits based on duration</li>
+          <li>
+            You are charged only for clips successfully added to your account
+          </li>
           <li>All packages are one-time purchases (not subscription)</li>
         </ul>
       </div>

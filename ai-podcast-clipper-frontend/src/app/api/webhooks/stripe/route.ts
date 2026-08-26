@@ -1,4 +1,4 @@
-// stripe listen --forward-to localhost:3000/api/webhooks/stripe
+// stripe listen --forward-to localhost:3001/api/webhooks/stripe
 
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
@@ -29,37 +29,52 @@ export async function POST(req: Request) {
 
     if (event.type === "checkout.session.completed") {
       const session = event.data.object;
-      const customerId = session.customer as string;
+      if (session.payment_status !== "paid") {
+        return new NextResponse(null, { status: 200 });
+      }
 
-      const retreivedSession = await stripe.checkout.sessions.retrieve(
+      const customerId =
+        typeof session.customer === "string" ? session.customer : null;
+      if (!customerId) {
+        throw new Error("Paid checkout session has no Stripe customer ID");
+      }
+
+      const retrievedSession = await stripe.checkout.sessions.retrieve(
         session.id,
         { expand: ["line_items"] },
       );
 
-      const lineItems = retreivedSession.line_items;
-      if (lineItems && lineItems.data.length > 0) {
-        const priceId = lineItems.data[0]?.price?.id ?? undefined;
+      const priceId = retrievedSession.line_items?.data[0]?.price?.id;
+      const creditsByPrice = new Map([
+        [env.STRIPE_SMALL_CREDIT_PACK, 50],
+        [env.STRIPE_MEDIUM_CREDIT_PACK, 150],
+        [env.STRIPE_LARGE_CREDIT_PACK, 500],
+      ]);
+      const creditsToAdd = priceId ? creditsByPrice.get(priceId) : undefined;
 
-        if (priceId) {
-          let creditsToAdd = 0;
+      if (!creditsToAdd) {
+        console.error("Ignoring checkout with an unknown credit-pack price", {
+          eventId: event.id,
+          priceId,
+        });
+        return new NextResponse(null, { status: 200 });
+      }
 
-          if (priceId === env.STRIPE_SMALL_CREDIT_PACK) {
-            creditsToAdd = 50;
-          } else if (priceId === env.STRIPE_MEDIUM_CREDIT_PACK) {
-            creditsToAdd = 150;
-          } else if (priceId === env.STRIPE_LARGE_CREDIT_PACK) {
-            creditsToAdd = 500;
-          }
-
-          await db.user.update({
-            where: { stripeCustomerId: customerId },
-            data: {
-              credits: {
-                increment: creditsToAdd,
-              },
-            },
+      try {
+        await db.$transaction(async (tx) => {
+          await tx.stripeWebhookEvent.create({
+            data: { id: event.id },
           });
+          await tx.user.update({
+            where: { stripeCustomerId: customerId },
+            data: { credits: { increment: creditsToAdd } },
+          });
+        });
+      } catch (error) {
+        if ((error as { code?: string }).code === "P2002") {
+          return new NextResponse(null, { status: 200 });
         }
+        throw error;
       }
     }
 

@@ -20,23 +20,38 @@ const PRICE_IDS: Record<PriceId, string> = {
 
 export async function createCheckoutSession(priceId: PriceId) {
   const serverSession = await auth();
+  if (!serverSession?.user?.id) {
+    throw new Error("Unauthorized");
+  }
+
+  const selectedPrice = PRICE_IDS[priceId];
+  if (!selectedPrice) {
+    throw new Error("Unknown credit pack");
+  }
 
   const user = await db.user.findUniqueOrThrow({
     where: {
-      id: serverSession?.user.id,
+      id: serverSession.user.id,
     },
-    select: { stripeCustomerId: true },
+    select: { stripeCustomerId: true, email: true },
   });
 
-  if (!user.stripeCustomerId) {
-    throw new Error("User has no stripeCustomerId");
+  let stripeCustomerId = user.stripeCustomerId;
+  if (!stripeCustomerId) {
+    const customer = await stripe.customers.create({ email: user.email });
+    stripeCustomerId = customer.id;
+    await db.user.update({
+      where: { id: serverSession.user.id },
+      data: { stripeCustomerId },
+    });
   }
 
   const session = await stripe.checkout.sessions.create({
-    line_items: [{ price: PRICE_IDS[priceId], quantity: 1 }],
-    customer: user.stripeCustomerId,
+    line_items: [{ price: selectedPrice, quantity: 1 }],
+    customer: stripeCustomerId,
     mode: "payment",
     success_url: `${env.BASE_URL}/dashboard?success=true`,
+    cancel_url: `${env.BASE_URL}/dashboard/billing?canceled=true`,
   });
 
   if (!session.url) {

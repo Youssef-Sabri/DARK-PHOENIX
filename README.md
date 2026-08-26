@@ -1,10 +1,18 @@
-# Dark Phoenix
+<p align="center">
+  <img src="branding/lunartech-banner.png" alt="LUNARTECH" width="100%">
+</p>
 
-AI-powered podcast video clipper. Upload a long-form podcast video, the backend
-runs active-speaker detection + transcription + LLM-driven moment selection,
-and the frontend serves the resulting short-form clips back to the user.
+<h1 align="center">Dark Phoenix</h1>
 
-A LUNARTECH LABS project.
+<p align="center">
+  <strong>AI-powered podcast video clipper</strong><br>
+  A <a href="https://www.linkedin.com/company/lunartechai/">LUNARTECH</a> Labs project<br>
+  Created by <a href="https://www.linkedin.com/in/vahe-aslanyan/">Vahe Aslanyan</a>
+</p>
+
+Upload a long-form podcast video, the backend runs active-speaker detection +
+transcription + LLM-driven moment selection, and the frontend serves the
+resulting short-form clips back to the user.
 
 ## Architecture
 
