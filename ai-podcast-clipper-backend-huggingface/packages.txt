@@ -1,0 +1,14 @@
+ffmpeg
+libgl1-mesa-glx
+fontconfig
+fonts-freefont-ttf
+pkg-config
+libavformat-dev
+libavcodec-dev
+libavdevice-dev
+libavutil-dev
+libswscale-dev
+libswresample-dev
+libavfilter-dev
+build-essential
+gcc
