@@ -1,0 +1,15 @@
+name: Keep Hugging Face Backend Alive
+
+on:
+  schedule:
+    # Runs every 6 hours (at minute 0)
+    - cron: '0 */6 * * *'
+  workflow_dispatch: # Allows manual trigger anytime
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Hugging Face Backend Health Endpoint
+        run: |
+          curl -fsSL https://y0sf-dark-phoenix-backend.hf.space/health || echo "Ping failed, but workflow recorded."
