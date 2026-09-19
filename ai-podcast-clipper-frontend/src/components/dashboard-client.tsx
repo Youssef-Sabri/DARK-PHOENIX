@@ -12,11 +12,12 @@ import {
   CardHeader,
   CardTitle,
 } from "./ui/card";
-import { Loader2, UploadCloud } from "lucide-react";
+import { Loader2, UploadCloud, Youtube } from "lucide-react";
 import { useState } from "react";
 import { generateUploadUrl } from "~/actions/s3";
 import { toast } from "sonner";
-import { processVideo } from "~/actions/generation";
+import { processVideo, ingestYouTubeVideo } from "~/actions/generation";
+import { Input } from "./ui/input";
 import {
   Table,
   TableBody,
@@ -47,7 +48,34 @@ export function DashboardClient({
   const [uploading, setUploading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [ingestingYoutube, setIngestingYoutube] = useState(false);
   const router = useRouter();
+
+  const handleYouTubeSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const url = youtubeUrl.trim();
+    if (!url) return;
+
+    setIngestingYoutube(true);
+    try {
+      const res = await ingestYouTubeVideo(url);
+      if (res.success) {
+        toast.success("YouTube video queued for processing!", {
+          description: `Video ID: ${res.videoId}. Cloud backend will ingest and generate clips.`,
+          duration: 5000,
+        });
+        setYoutubeUrl("");
+        router.refresh();
+      }
+    } catch (error) {
+      toast.error("Failed to ingest YouTube video", {
+        description: error instanceof Error ? error.message : "Something went wrong.",
+      });
+    } finally {
+      setIngestingYoutube(false);
+    }
+  };
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -159,60 +187,120 @@ export function DashboardClient({
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div
-                {...getRootProps()}
-                className="hover:bg-muted/50 cursor-pointer rounded-lg border border-dashed transition-colors"
-              >
-                <input {...getInputProps()} />
-                <div className="flex flex-col items-center justify-center space-y-4 rounded-lg p-10 text-center">
-                  <UploadCloud className="text-muted-foreground h-12 w-12" />
-                  <p className="font-medium">
-                    {isDragActive
-                      ? "Drop your video here"
-                      : "Drag and drop your file"}
-                  </p>
-                  <p className="text-muted-foreground text-sm">
-                    or click to browse (MP4 up to 500MB)
-                  </p>
-                  <Button
-                    type="button"
-                    className="pointer-events-none"
-                    variant="default"
-                    size="sm"
-                    disabled={uploading}
-                  >
-                    Select File
-                  </Button>
-                </div>
-              </div>
+              <Tabs defaultValue="file" className="w-full">
+                <TabsList className="mb-4 grid w-full max-w-xs grid-cols-2">
+                  <TabsTrigger value="file">Local MP4</TabsTrigger>
+                  <TabsTrigger value="youtube" className="flex items-center gap-1.5">
+                    <Youtube className="h-4 w-4 text-red-500" />
+                    YouTube URL
+                  </TabsTrigger>
+                </TabsList>
 
-              <div className="mt-2 flex items-start justify-between">
-                <div>
-                  {files.length > 0 && (
-                    <div className="space-y-1 text-sm">
-                      <p className="font-medium">Selected file:</p>
-                      {files.map((file) => (
-                        <p key={file.name} className="text-muted-foreground">
-                          {file.name}
-                        </p>
-                      ))}
+                <TabsContent value="file" className="space-y-4">
+                  <div
+                    {...getRootProps()}
+                    className="hover:bg-muted/50 cursor-pointer rounded-lg border border-dashed transition-colors"
+                  >
+                    <input {...getInputProps()} />
+                    <div className="flex flex-col items-center justify-center space-y-4 rounded-lg p-10 text-center">
+                      <UploadCloud className="text-muted-foreground h-12 w-12" />
+                      <p className="font-medium">
+                        {isDragActive
+                          ? "Drop your video here"
+                          : "Drag and drop your file"}
+                      </p>
+                      <p className="text-muted-foreground text-sm">
+                        or click to browse (MP4 up to 500MB)
+                      </p>
+                      <Button
+                        type="button"
+                        className="pointer-events-none"
+                        variant="default"
+                        size="sm"
+                        disabled={uploading}
+                      >
+                        Select File
+                      </Button>
                     </div>
-                  )}
-                </div>
-                <Button
-                  disabled={files.length === 0 || uploading}
-                  onClick={handleUpload}
-                >
-                  {uploading ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Uploading...
-                    </>
-                  ) : (
-                    "Upload and Generate Clips"
-                  )}
-                </Button>
-              </div>
+                  </div>
+
+                  <div className="flex items-start justify-between">
+                    <div>
+                      {files.length > 0 && (
+                        <div className="space-y-1 text-sm">
+                          <p className="font-medium">Selected file:</p>
+                          {files.map((file) => (
+                            <p key={file.name} className="text-muted-foreground">
+                              {file.name}
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <Button
+                      disabled={files.length === 0 || uploading}
+                      onClick={handleUpload}
+                    >
+                      {uploading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Uploading...
+                        </>
+                      ) : (
+                        "Upload and Generate Clips"
+                      )}
+                    </Button>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="youtube" className="space-y-4">
+                  <div className="rounded-lg border p-6 space-y-4 bg-muted/20">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">YouTube Video URL</label>
+                      <div className="flex gap-2">
+                        <Input
+                          type="url"
+                          placeholder="https://www.youtube.com/watch?v=YRvf00NooN8"
+                          value={youtubeUrl}
+                          onChange={(e) => setYoutubeUrl(e.target.value)}
+                          disabled={ingestingYoutube}
+                          className="flex-1"
+                        />
+                        <Button
+                          type="button"
+                          disabled={!youtubeUrl.trim() || ingestingYoutube}
+                          onClick={() => handleYouTubeSubmit()}
+                        >
+                          {ingestingYoutube ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Ingesting...
+                            </>
+                          ) : (
+                            "Ingest & Clip"
+                          )}
+                        </Button>
+                      </div>
+                      <p className="text-muted-foreground text-xs">
+                        The video is downloaded server-side in the cloud. No local storage or bandwidth is used.
+                      </p>
+                    </div>
+
+                    <div className="pt-2 border-t flex items-center justify-between">
+                      <span className="text-muted-foreground text-xs">Assigned evaluation video:</span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="text-xs"
+                        onClick={() => setYoutubeUrl("https://www.youtube.com/watch?v=YRvf00NooN8")}
+                      >
+                        Paste Assigned URL (YRvf00NooN8)
+                      </Button>
+                    </div>
+                  </div>
+                </TabsContent>
+              </Tabs>
 
               {uploadedFiles.length > 0 && (
                 <div className="pt-6">
