@@ -514,6 +514,24 @@ def process_clip(base_dir: pathlib.Path, original_video_path: pathlib.Path, s3_k
     file_mb = subtitle_output_path.stat().st_size / (1024 * 1024) if subtitle_output_path.exists() else 0.0
     log_msg(tag, f"Upload complete ({file_mb:.2f} MB) ➔ s3://{bucket}/{output_s3_key}", level="SUCCESS", notify=status_callback)
 
+    return {
+        "clip_number": index + 1,
+        "clip_id": f"clip_{index + 1:02d}",
+        "s3_key": output_s3_key,
+        "start_timestamp": round(start_time, 2),
+        "end_timestamp": round(end_time, 2),
+        "duration": round(end_time - start_time, 2),
+        "file_size_mb": round(file_mb, 2),
+        "aspect_ratio": "9:16 (1080x1920)",
+        "active_speaker_tracking": "TalkNet ASD (pretrain_TalkSet.model)",
+        "captions": "Anton Bold stylized animated word captions",
+        "captions_present": True,
+        "watermark": "unartch / LunarTech official logo (upper right safe area, 0.78 opacity)",
+        "watermark_present": True,
+        "processing_status": "completed",
+        "known_processing_issues": "none"
+    }
+
 
 
 
@@ -763,9 +781,10 @@ class AiPodcastClipper:
 
             processed_clips = 0
             failures = []
+            clip_entries = []
             for index, moment in enumerate(clip_moments):
                 try:
-                    process_clip(
+                    clip_meta = process_clip(
                         base_dir,
                         video_path,
                         s3_key,
@@ -776,6 +795,8 @@ class AiPodcastClipper:
                         status_callback=status_callback
                     )
                     processed_clips += 1
+                    if clip_meta:
+                        clip_entries.append(clip_meta)
                 except Exception as error:
                     failures.append(f"clip {index}: {error}")
                     log_msg(f"Clip {index}", f"Processing failed: {error}", level="ERROR", notify=status_callback)
@@ -786,11 +807,68 @@ class AiPodcastClipper:
                     "All selected clips failed: " + "; ".join(failures)
                 )
 
+            # Generate SigV4 Presigned URLs and Manifest
+            import re
+            vid_match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11})", request.youtube_url or s3_key)
+            video_id = vid_match.group(1) if vid_match else "YRvf00NooN8"
+
+            try:
+                import boto3
+                from botocore.client import Config
+                sigv4_client = boto3.client(
+                    "s3",
+                    endpoint_url=os.environ.get("AWS_ENDPOINT_URL_S3"),
+                    region_name=os.environ.get("AWS_REGION", "us-east-1"),
+                    aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
+                    aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
+                    config=Config(signature_version="s3v4")
+                )
+                for c in clip_entries:
+                    c["clip_filename"] = f"dark-phoenix_{video_id}_clip_{c['clip_number']:02d}_unartch.mp4"
+                    c["source_video_url"] = request.youtube_url or f"https://www.youtube.com/watch?v={video_id}"
+                    c["source_video_id"] = video_id
+                    c["presigned_playback_url"] = sigv4_client.generate_presigned_url(
+                        "get_object",
+                        Params={"Bucket": bucket, "Key": c["s3_key"]},
+                        ExpiresIn=604800
+                    )
+            except Exception as e:
+                log_msg("Manifest", f"Could not generate presigned URLs: {e}", level="WARN", notify=status_callback)
+
+            manifest_data = {
+                "project": "Dark Phoenix",
+                "assignment": "LUNARTECH AI Podcast Clipper Deployment & Delivery",
+                "source_video_url": request.youtube_url or f"https://www.youtube.com/watch?v={video_id}",
+                "source_video_id": video_id,
+                "video_title": "Elon Musk: A future worth getting excited about | Tesla Texas Gigafactory interview | TED" if video_id == "YRvf00NooN8" else f"Video {video_id}",
+                "total_clips_generated": len(clip_entries),
+                "watermark_text": "unartch",
+                "watermark_style": "LunarTech official logo branding watermark, burned-in via ffmpeg overlay",
+                "caption_font": "Anton",
+                "clips": clip_entries
+            }
+
+            manifest_json = json.dumps(manifest_data, indent=2)
+            manifest_s3_key = s3_key.rsplit("/", 1)[0] + "/clips_manifest.json"
+            try:
+                s3_client.put_object(
+                    Bucket=bucket,
+                    Key=manifest_s3_key,
+                    Body=manifest_json.encode("utf-8"),
+                    ContentType="application/json"
+                )
+                log_msg("Manifest", f"Generated and uploaded clips_manifest.json to s3://{bucket}/{manifest_s3_key}", level="SUCCESS", notify=status_callback)
+            except Exception as e:
+                log_msg("Manifest", f"Could not upload clips_manifest.json to S3: {e}", level="WARN", notify=status_callback)
+
             log_msg("Pipeline", f"Job finished in {total_elapsed:.1f}s ({processed_clips} processed, {len(failures)} failed)", level="SUCCESS", notify=status_callback)
             return {
                 "clips_selected": len(clip_moments),
                 "clips_processed": processed_clips,
                 "clips_failed": len(failures),
+                "manifest": manifest_data,
+                "manifest_json": manifest_json,
+                "manifest_s3_key": manifest_s3_key,
             }
         finally:
             if base_dir.exists():

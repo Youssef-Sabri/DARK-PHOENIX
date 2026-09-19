@@ -169,7 +169,7 @@ def gradio_process_action(s3_key: str, max_clips: int, youtube_url: str = ""):
     youtube_url = youtube_url.strip() if youtube_url else ""
 
     if not s3_key and not youtube_url:
-        yield "⚠️ Please enter an S3 Key or a YouTube Video URL"
+        yield "⚠️ Please enter an S3 Key or a YouTube Video URL", None, None
         return
 
     if not s3_key and youtube_url:
@@ -212,7 +212,7 @@ def gradio_process_action(s3_key: str, max_clips: int, youtube_url: str = ""):
     thread.start()
 
     accumulated_logs = [f"[{time.strftime('%H:%M:%S')}] 🔥 [Pipeline] Initializing Dark Phoenix processing job..."]
-    yield "\n".join(accumulated_logs)
+    yield "\n".join(accumulated_logs), None, None
 
     while True:
         try:
@@ -221,7 +221,7 @@ def gradio_process_action(s3_key: str, max_clips: int, youtube_url: str = ""):
                 break
             elif msg_type == "log":
                 accumulated_logs.append(payload)
-                yield "\n".join(accumulated_logs)
+                yield "\n".join(accumulated_logs), None, None
         except queue.Empty:
             if not thread.is_alive() and log_queue.empty():
                 break
@@ -243,10 +243,22 @@ def gradio_process_action(s3_key: str, max_clips: int, youtube_url: str = ""):
             accumulated_logs.append(
                 f"\n❌ Pipeline failed: {err_msg}"
             )
-        yield "\n".join(accumulated_logs)
+        yield "\n".join(accumulated_logs), None, None
         return
 
     res = result_holder.get("result", {})
+    manifest = res.get("manifest")
+    manifest_path = None
+
+    if manifest:
+        try:
+            manifest_path = "/tmp/clips_manifest.json"
+            with open(manifest_path, "w", encoding="utf-8") as f:
+                json.dump(manifest, f, indent=2)
+        except Exception as e:
+            accumulated_logs.append(f"⚠️ Could not write local manifest file: {e}")
+            manifest_path = None
+
     summary = (
         "\n" + "=" * 60 + "\n"
         f"🎉 PIPELINE FINISHED IN {elapsed:.1f}s\n"
@@ -256,7 +268,10 @@ def gradio_process_action(s3_key: str, max_clips: int, youtube_url: str = ""):
         + "=" * 60
     )
     accumulated_logs.append(summary)
-    yield "\n".join(accumulated_logs)
+    if manifest_path:
+        accumulated_logs.append(f"\n✅ clips_manifest.json created successfully! Download it below or view the preview.")
+
+    yield "\n".join(accumulated_logs), manifest_path, manifest
 
 with gr.Blocks(title="Dark Phoenix Backend", theme=gr.themes.Soft(primary_hue="purple")) as demo:
     gr.Markdown("# 🔥 Dark Phoenix AI Video Clipper (ZeroGPU)")
@@ -266,7 +281,7 @@ with gr.Blocks(title="Dark Phoenix Backend", theme=gr.themes.Soft(primary_hue="p
     )
     
     with gr.Row():
-        with gr.Column():
+        with gr.Column(scale=1):
             input_youtube_url = gr.Textbox(
                 label="YouTube Video URL (Server-Side Ingestion)",
                 placeholder="https://www.youtube.com/watch?v=YRvf00NooN8",
@@ -283,17 +298,23 @@ with gr.Blocks(title="Dark Phoenix Backend", theme=gr.themes.Soft(primary_hue="p
             )
             process_btn = gr.Button("🚀 Process Video", variant="primary")
             
-        with gr.Column():
+        with gr.Column(scale=1):
             output_status = gr.Textbox(
                 label="Execution Status & Live Logs",
-                lines=15,
+                lines=12,
                 interactive=False
+            )
+            output_manifest_file = gr.File(
+                label="📥 Download clips_manifest.json"
+            )
+            output_manifest_json = gr.JSON(
+                label="📋 clips_manifest.json Preview"
             )
 
     process_btn.click(
         fn=gradio_process_action,
         inputs=[input_s3_key, input_max_clips, input_youtube_url],
-        outputs=[output_status]
+        outputs=[output_status, output_manifest_file, output_manifest_json]
     )
 
     gr.Markdown("---")
